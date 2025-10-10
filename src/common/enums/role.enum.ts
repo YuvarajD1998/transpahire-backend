@@ -1,0 +1,9 @@
+// src/common/enums/role.enum.ts
+export enum Role {
+  CANDIDATE = 'CANDIDATE',
+  RECRUITER = 'RECRUITER', 
+  ORG_ADMIN = 'ORG_ADMIN',
+  ORG_MANAGER = 'ORG_MANAGER',
+  ORG_RECRUITER = 'ORG_RECRUITER',
+  PLATFORM_ADMIN = 'PLATFORM_ADMIN',
+}

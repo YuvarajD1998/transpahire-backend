@@ -1,0 +1,19 @@
+{
+  "auth": {
+    "login": "Iniciar Sesión",
+    "register": "Registrarse",
+    "logout": "Cerrar Sesión",
+    "invalid_credentials": "Email o contraseña inválidos",
+    "registration_success": "Registro exitoso"
+  },
+  "jobs": {
+    "create": "Crear Trabajo",
+    "apply": "Aplicar",
+    "application_submitted": "Aplicación enviada exitosamente"
+  },
+  "errors": {
+    "internal_server_error": "Error interno del servidor",
+    "unauthorized": "Acceso no autorizado",
+    "forbidden": "Acceso prohibido"
+  }
+}

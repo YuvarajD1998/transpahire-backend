@@ -1,0 +1,480 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                     Int            @id @default(autoincrement())
+  email                  String         @unique
+  password               String
+  role                   Role           @default(CANDIDATE)
+  status                 UserStatus     @default(ACTIVE)
+  tenantId               Int?           @map("tenant_id")
+  verified               Boolean        @default(false)
+  emailVerificationToken String?        @map("email_verification_token")
+  passwordResetToken     String?        @map("password_reset_token")
+  passwordResetExpiry    DateTime?      @map("password_reset_expiry")
+  lastLoginAt            DateTime?      @map("last_login_at")
+  deletedAt              DateTime?      @map("deleted_at")
+  deletedBy              Int?           @map("deleted_by")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+  applications           Application[]
+  auditLogs              AuditLog[]
+  sentMessages           Message[]      @relation("SentMessages")
+  receivedMessages       Message[]      @relation("ReceivedMessages")
+  profile                Profile?
+  subscription           Subscription?
+  userOrgRoles           UserOrgRole[]
+  deletedByUser          User?          @relation("DeletedBy", fields: [deletedBy], references: [id])
+  deletedUsers           User[]         @relation("DeletedBy")
+  organization           Organization?  @relation(fields: [tenantId], references: [id])
+  verifications          Verification[]
+
+  @@index([role])
+  @@index([tenantId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([lastLoginAt])
+  @@map("users")
+}
+
+model Organization {
+  id               Int              @id @default(autoincrement())
+  name             String           @unique
+  plan             OrgPlan          @default(INDIVIDUAL)
+  verified         Boolean          @default(false)
+  stripeCustomerId String?          @map("stripe_customer_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  domain           String?
+  jobs             Job[]
+  subscription     OrgSubscription?
+  userOrgRoles     UserOrgRole[]
+  users            User[]
+  verifications    Verification[]
+
+  @@map("organizations")
+}
+
+model UserOrgRole {
+  id           Int          @id @default(autoincrement())
+  userId       Int          @map("user_id")
+  orgId        Int          @map("org_id")
+  role         Role
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("user_org_roles")
+}
+
+model Profile {
+  id                  Int              @id @default(autoincrement())
+  userId              Int              @unique @map("user_id")
+  firstName           String           @map("first_name")
+  lastName            String           @map("last_name")
+  phone               String?
+  location            String?
+  resumeUrl           String?          @map("resume_url")
+  skills              Json?
+  experience          Json?
+  preferences         Json?
+  summary             String?
+  linkedinUrl         String?          @map("linkedin_url")
+  githubUrl           String?          @map("github_url")
+  websiteUrl          String?          @map("website_url")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+  bio                 String?
+  headline            String?
+  privacyMode         PrivacyMode      @default(PUBLIC) @map("privacy_mode")
+  profileCompleteness Int              @default(0) @map("profile_completeness")
+  embeddingsGenerated Boolean          @default(false) @map("embeddings_generated")
+  embeddingsVersion   Int?             @map("embeddings_version")
+  profilePhotoUrl     String?          @map("profilephotourl")
+  educations          Education[]
+  profileSkills       ProfileSkill[]
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumes             Resume[]
+  workExperiences     WorkExperience[]
+
+  @@map("profiles")
+}
+
+model Subscription {
+  id                   Int              @id @default(autoincrement())
+  userId               Int              @unique @map("user_id")
+  tier                 SubscriptionTier @default(FREE)
+  status               String           @default("active")
+  stripeCustomerId     String?          @map("stripe_customer_id")
+  stripeSubscriptionId String?          @map("stripe_subscription_id")
+  currentPeriodStart   DateTime?        @map("current_period_start")
+  currentPeriodEnd     DateTime?        @map("current_period_end")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model OrgSubscription {
+  id                   Int          @id @default(autoincrement())
+  orgId                Int          @unique @map("org_id")
+  plan                 OrgPlan
+  status               String       @default("active")
+  stripeCustomerId     String?      @map("stripe_customer_id")
+  stripeSubscriptionId String?      @map("stripe_subscription_id")
+  currentPeriodStart   DateTime?    @map("current_period_start")
+  currentPeriodEnd     DateTime?    @map("current_period_end")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  organization         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("org_subscriptions")
+}
+
+model Job {
+  id                  Int           @id @default(autoincrement())
+  title               String
+  description         String
+  requirements        Json?
+  location            String?
+  remote              Boolean       @default(false)
+  salaryMin           Int?          @map("salary_min")
+  salaryMax           Int?          @map("salary_max")
+  currency            String?       @default("USD")
+  type                String        @default("FULL_TIME")
+  status              String        @default("ACTIVE")
+  orgId               Int           @map("org_id")
+  createdBy           Int           @map("created_by")
+  expiresAt           DateTime?     @map("expires_at")
+  qualityScore        Float?        @map("quality_score")
+  embeddings          Json?
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  embeddingsGenerated Boolean       @default(false) @map("embeddings_generated")
+  embeddingsVersion   Int?          @map("embeddings_version")
+  applications        Application[]
+  jobVersions         JobVersion[]
+  organization        Organization  @relation(fields: [orgId], references: [id])
+
+  @@map("jobs")
+}
+
+model JobVersion {
+  id         Int      @id @default(autoincrement())
+  jobId      Int      @map("job_id")
+  version    Int      @default(1)
+  jdSnapshot Json     @map("jd_snapshot")
+  embeddings Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, version])
+  @@map("job_versions")
+}
+
+model Application {
+  id                 Int                   @id @default(autoincrement())
+  candidateId        Int                   @map("candidate_id")
+  jobId              Int                   @map("job_id")
+  status             ApplicationStatus     @default(SUBMITTED)
+  privacyMode        PrivacyMode           @default(PUBLIC)
+  coverLetter        String?               @map("cover_letter")
+  resumeSnapshot     Json?                 @map("resume_snapshot")
+  matchScore         Float?                @map("match_score")
+  explanationPayload Json?                 @map("explanation_payload")
+  slaTimers          Json?                 @map("sla_timers")
+  appliedAt          DateTime              @default(now()) @map("applied_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  feedback           ApplicationFeedback[]
+  stages             ApplicationStage[]
+  candidate          User                  @relation(fields: [candidateId], references: [id])
+  job                Job                   @relation(fields: [jobId], references: [id])
+  interviews         Interview[]
+
+  @@unique([candidateId, jobId])
+  @@map("applications")
+}
+
+model ApplicationStage {
+  id            Int               @id @default(autoincrement())
+  applicationId Int               @map("application_id")
+  stage         ApplicationStatus
+  notes         String?
+  movedAt       DateTime          @default(now()) @map("moved_at")
+  movedBy       Int?              @map("moved_by")
+  application   Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("application_stages")
+}
+
+model ApplicationFeedback {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  rating        Int?
+  feedback      String?
+  isPublic      Boolean     @default(false) @map("is_public")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("application_feedback")
+}
+
+model Interview {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  scheduledAt   DateTime    @map("scheduled_at")
+  duration      Int?
+  meetingLink   String?     @map("meeting_link")
+  status        String      @default("SCHEDULED")
+  notes         String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("interviews")
+}
+
+model Message {
+  id       Int      @id @default(autoincrement())
+  fromId   Int      @map("from_id")
+  toId     Int      @map("to_id")
+  threadId String?  @map("thread_id")
+  subject  String?
+  content  String
+  isRead   Boolean  @default(false) @map("is_read")
+  sentAt   DateTime @default(now()) @map("sent_at")
+  sender   User     @relation("SentMessages", fields: [fromId], references: [id])
+  receiver User     @relation("ReceivedMessages", fields: [toId], references: [id])
+
+  @@map("messages")
+}
+
+model Verification {
+  id           Int                @id @default(autoincrement())
+  userId       Int?               @map("user_id")
+  orgId        Int?               @map("org_id")
+  type         String
+  status       VerificationStatus @default(PENDING)
+  documents    Json?
+  notes        String?
+  reviewedBy   Int?               @map("reviewed_by")
+  reviewedAt   DateTime?          @map("reviewed_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  organization Organization?      @relation(fields: [orgId], references: [id])
+  user         User?              @relation(fields: [userId], references: [id])
+
+  @@map("verifications")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String
+  resource   String?
+  resourceId Int?     @map("resource_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  timestamp  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Embedding {
+  id         Int      @id @default(autoincrement())
+  entityType String   @map("entity_type")
+  entityId   Int      @map("entity_id")
+  vector     Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  dimensions Int      @default(1536)
+  modelName  String   @default("text-embedding-3-small") @map("model_name")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  version    Int      @default(1)
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
+  @@index([entityId])
+  @@map("embeddings")
+}
+
+model Resume {
+  id              Int              @id @default(autoincrement())
+  profileId       Int              @map("profile_id")
+  filename        String
+  originalName    String           @map("original_name")
+  filePath        String           @map("file_path")
+  fileSize        Int              @map("file_size")
+  mimetype        String
+  parseStatus     ParseStatus      @default(PENDING) @map("parse_status")
+  confidenceScore Float?           @map("confidence_score")
+  isPrimary       Boolean          @default(false) @map("is_primary")
+  parsedData      Json?            @map("parsed_data")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  critiques       ResumeCritique[]
+  profile         Profile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workExperiences WorkExperience[]
+  educations      Education[]
+
+  @@index([profileId, isPrimary])
+  @@index([parseStatus])
+  @@map("resumes")
+}
+
+model ResumeCritique {
+  id           Int      @id @default(autoincrement())
+  resumeId     Int      @map("resume_id")
+  overallScore Int      @map("overall_score")
+  sections     Json
+  suggestions  Json
+  strengths    Json
+  weaknesses   Json
+  aiModel      String   @map("ai_model")
+  createdAt    DateTime @default(now()) @map("created_at")
+  resume       Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@map("resume_critiques")
+}
+
+model ProfileSkill {
+  id               Int               @id @default(autoincrement())
+  profileId        Int               @map("profile_id")
+  skillName        String            @map("skill_name")
+  category         String?
+  proficiencyLevel ProficiencyLevel? @map("proficiency_level")
+  yearsExperience  Int?              @map("years_experience")
+  source           SkillSource       @default(AI_EXTRACTED)
+  verified         Boolean           @default(false)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  profile          Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, skillName])
+  @@index([profileId])
+  @@map("profile_skills")
+}
+
+model WorkExperience {
+  id           Int       @id @default(autoincrement())
+  profileId    Int       @map("profile_id")
+  company      String
+  position     String
+  location     String?
+  startDate    DateTime? @map("start_date")
+  endDate      DateTime? @map("end_date")
+  isCurrent    Boolean   @default(false) @map("is_current")
+  description  String?
+  achievements Json?
+  skills       Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  profile      Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  resumeId    Int?      @map("resume_id")  // Track source resume
+  source      String    @default("AI_EXTRACTED") // MANUAL, AI_EXTRACTED, VERIFIED
+  resume      Resume?   @relation(fields: [resumeId], references: [id])
+
+  @@index([resumeId])
+  @@map("work_experiences")
+}
+
+model Education {
+  id          Int       @id @default(autoincrement())
+  profileId   Int       @map("profile_id")
+  institution String
+  degree      String
+  field       String?
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  grade       String?
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  resumeId    Int?      @map("resume_id")  // Track source resume  
+  source      String    @default("AI_EXTRACTED") // MANUAL, AI_EXTRACTED, VERIFIED
+
+  resume      Resume?   @relation(fields: [resumeId], references: [id])
+
+  @@index([resumeId])
+  @@map("educations")
+}
+
+enum Role {
+  CANDIDATE
+  RECRUITER
+  ORG_ADMIN
+  ORG_MANAGER
+  ORG_RECRUITER
+  PLATFORM_ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PREMIUM
+}
+
+enum OrgPlan {
+  INDIVIDUAL
+  ORG_BASIC
+  ORG_PREMIUM
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  VIEWED
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  REJECTED
+  OFFERED
+  ACCEPTED
+  WITHDRAWN
+}
+
+enum PrivacyMode {
+  PUBLIC
+  LIMITED
+  ANONYMOUS
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum ParseStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SkillSource {
+  MANUAL
+  AI_EXTRACTED
+  VERIFIED
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}

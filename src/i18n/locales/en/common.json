@@ -1,0 +1,19 @@
+{
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "logout": "Logout",
+    "invalid_credentials": "Invalid email or password",
+    "registration_success": "Registration successful"
+  },
+  "jobs": {
+    "create": "Create Job",
+    "apply": "Apply",
+    "application_submitted": "Application submitted successfully"
+  },
+  "errors": {
+    "internal_server_error": "Internal server error",
+    "unauthorized": "Unauthorized access",
+    "forbidden": "Access forbidden"
+  }
+}
