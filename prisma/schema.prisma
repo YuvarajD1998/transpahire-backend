@@ -5,6 +5,8 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+
 }
 
 model User {
@@ -34,6 +36,8 @@ model User {
   deletedUsers           User[]         @relation("DeletedBy")
   organization           Organization?  @relation(fields: [tenantId], references: [id])
   verifications          Verification[]
+  createdJobs            Job[]          @relation("JobCreator")
+  changedJobVersions     JobVersion[]   @relation("JobVersionChanger")
 
   @@index([role])
   @@index([tenantId])
@@ -138,47 +142,157 @@ model OrgSubscription {
   @@map("org_subscriptions")
 }
 
+// ============================================
+// JOB MODEL (Enhanced)
+// ============================================
+
 model Job {
   id                  Int           @id @default(autoincrement())
   title               String
   description         String
-  requirements        Json?
+  
+  // DEPRECATED: Keep for backward compatibility, but use JobRequiredSkill instead
+  requirements        Json?         // Will be migrated to JobRequiredSkill
+  
+  // Location & Work Mode
   location            String?
   remote              Boolean       @default(false)
+  hybrid              Boolean       @default(false)
+  
+  // Compensation
   salaryMin           Int?          @map("salary_min")
   salaryMax           Int?          @map("salary_max")
   currency            String?       @default("USD")
-  type                String        @default("FULL_TIME")
-  status              String        @default("ACTIVE")
+  
+  // Job Classification
+  type                JobType       @default(FULL_TIME)
+  status              JobStatus     @default(ACTIVE)
+  roleType            RoleType      @default(INDIVIDUAL_CONTRIBUTOR) @map("role_type")
+  seniorityLevel      SeniorityLevel @default(MID_LEVEL) @map("seniority_level")
+  department          String?       // Engineering, Sales, Marketing, etc.
+  
+  // Experience Requirements
+  minExperience       Int?          @map("min_experience")  // Years
+  maxExperience       Int?          @map("max_experience")  // Years
+  
+  // Organization
   orgId               Int           @map("org_id")
   createdBy           Int           @map("created_by")
+  
+  // Lifecycle
   expiresAt           DateTime?     @map("expires_at")
+  publishedAt         DateTime?     @map("published_at")
+  closedAt            DateTime?     @map("closed_at")
+  filledAt            DateTime?     @map("filled_at")
+  
+  // Quality & Analytics
   qualityScore        Float?        @map("quality_score")
+  viewCount           Int           @default(0) @map("view_count")
+  applicationCount    Int           @default(0) @map("application_count")
+  
+  // DEPRECATED: Old single embedding approach
   embeddings          Json?
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
   embeddingsGenerated Boolean       @default(false) @map("embeddings_generated")
   embeddingsVersion   Int?          @map("embeddings_version")
+  
+  // Timestamps
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  
+  // Relations
   applications        Application[]
   jobVersions         JobVersion[]
   organization        Organization  @relation(fields: [orgId], references: [id])
-
+  creator             User          @relation("JobCreator", fields: [createdBy], references: [id])
+  
+  // Multi-vector embeddings (replaces embeddings field)
+  jobEmbeddings       JobEmbedding[]
+  
+  // Structured skill requirements (replaces requirements JSON)
+  requiredSkills      JobRequiredSkill[]
+  
+  @@index([orgId])
+  @@index([status])
+  @@index([type])
+  @@index([roleType])
+  @@index([seniorityLevel])
+  @@index([createdBy])
+  @@index([publishedAt])
+  @@index([expiresAt])
   @@map("jobs")
 }
+
+
+// ============================================
+// JOB REQUIRED SKILLS
+// ============================================
+
+model JobRequiredSkill {
+  id                  Int       @id @default(autoincrement())
+  jobId               Int       @map("job_id")
+  skillTaxonomyId     Int       @map("skill_taxonomy_id")
+  
+  // ✅ Context & requirements
+  importance          SkillImportance @default(REQUIRED)
+  weight              Float     @default(1.0)  // 0.5-2.0 for this specific job
+  
+  yearsRequired       Int?      @map("years_required")
+  proficiencyRequired ProficiencyLevel? @map("proficiency_required")
+  
+  // ✅ Extraction metadata
+  source              String    @default("JD_PARSING")  // JD_PARSING, MANUAL, AI_ENHANCED
+  confidence          Float     @default(0.9)
+  contextSnippet      String?   @map("context_snippet")  // NEW: Where in JD was this found
+  
+  // ✅ Analytics
+  matchCount          Int       @default(0) @map("match_count")  // Candidate match count
+  avgCandidateYears   Float?    @map("avg_candidate_years")  // NEW: Benchmark data
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skillTaxonomy       SkillTaxonomy @relation(fields: [skillTaxonomyId], references: [id])
+  
+  @@unique([jobId, skillTaxonomyId])
+  @@index([jobId])
+  @@index([skillTaxonomyId])
+  @@index([importance])
+  @@index([confidence])  // NEW: Filter low-confidence skills
+  @@map("job_required_skills")
+}
+
+
+
+// ============================================
+// JOB VERSION 
+// ============================================
 
 model JobVersion {
   id         Int      @id @default(autoincrement())
   jobId      Int      @map("job_id")
   version    Int      @default(1)
-  jdSnapshot Json     @map("jd_snapshot")
+  
+  // ✅ Enhanced snapshot
+  jdSnapshot Json     @map("jd_snapshot")  // Complete job data at this version
+  
+  // ✅ Change tracking
+  changedBy  Int?     @map("changed_by")
+  changeType String?  @map("change_type")  // CREATED, UPDATED, REPUBLISHED, CLOSED
+  changeNote String?  @map("change_note")   // Why was it changed
+  
+  // ✅ DEPRECATED: Use JobEmbedding instead
   embeddings Json?
+  
   createdAt  DateTime @default(now()) @map("created_at")
+  
   job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  changer    User?    @relation("JobVersionChanger", fields: [changedBy], references: [id])
 
   @@unique([jobId, version])
+  @@index([jobId])
   @@map("job_versions")
 }
-
 model Application {
   id                 Int                   @id @default(autoincrement())
   candidateId        Int                   @map("candidate_id")
@@ -289,22 +403,6 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-model Embedding {
-  id         Int      @id @default(autoincrement())
-  entityType String   @map("entity_type")
-  entityId   Int      @map("entity_id")
-  vector     Json
-  createdAt  DateTime @default(now()) @map("created_at")
-  dimensions Int      @default(1536)
-  modelName  String   @default("text-embedding-3-small") @map("model_name")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  version    Int      @default(1)
-
-  @@unique([entityType, entityId])
-  @@index([entityType])
-  @@index([entityId])
-  @@map("embeddings")
-}
 
 model Resume {
   id              Int              @id @default(autoincrement())
@@ -348,20 +446,115 @@ model ResumeCritique {
 model ProfileSkill {
   id               Int               @id @default(autoincrement())
   profileId        Int               @map("profile_id")
+  
+  // ✅ Taxonomy linkage
+  skillTaxonomyId  Int?              @map("skill_taxonomy_id")
+  skillTaxonomy    SkillTaxonomy?    @relation(fields: [skillTaxonomyId], references: [id])
+  
+  // ✅ Legacy support
   skillName        String            @map("skill_name")
+  
   category         String?
   proficiencyLevel ProficiencyLevel? @map("proficiency_level")
   yearsExperience  Int?              @map("years_experience")
+  
+  // ✅ Verification & endorsements
   source           SkillSource       @default(AI_EXTRACTED)
   verified         Boolean           @default(false)
+  endorsementCount Int               @default(0) @map("endorsement_count")  // NEW: LinkedIn-style
+  lastUsedAt       DateTime?         @map("last_used_at")  // NEW: Skill recency
+  
+  skillType        SkillType         @default(TECHNICAL) @map("skill_type")
+  
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
+  
   profile          Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
-
+  endorsements     SkillEndorsement[]  // NEW: Track endorsers
+  
   @@unique([profileId, skillName])
   @@index([profileId])
+  @@index([skillTaxonomyId])
+  @@index([verified])  // NEW: Prioritize verified skills
+  @@index([lastUsedAt])  // NEW: Skill decay/freshness
   @@map("profile_skills")
 }
+
+model SkillEndorsement {
+  id             Int      @id @default(autoincrement())
+  profileSkillId Int      @map("profile_skill_id")
+  endorsedBy     Int?     @map("endorsed_by")  // User ID (nullable for AI endorsements)
+  endorserType   String   @default("USER")  // USER, AI, CERTIFICATION
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  profileSkill   ProfileSkill @relation(fields: [profileSkillId], references: [id], onDelete: Cascade)
+  
+  @@unique([profileSkillId, endorsedBy])
+  @@index([profileSkillId])
+  @@map("skill_endorsements")
+}
+
+
+// ============================================
+// Multi-Vector Embedding Models
+// ============================================
+
+model CandidateEmbedding {
+  id          Int      @id @default(autoincrement())
+  candidateId Int      @map("candidate_id")
+  type        String   // summary, skills, experience, education, full, job_specific
+  jobId       Int?     @map("job_id")  // For job-specific candidate embeddings
+  vector      Unsupported("vector")?
+  dimension   Int
+  modelName   String   @map("model_name")
+  version     Int      @default(1)
+  
+  // ✅ Metadata
+  tokenCount  Int?     @map("token_count")
+  language    String?  @default("en")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([candidateId, type, jobId, version])  // NEW
+  @@index([candidateId])
+  @@index([type])
+  @@index([jobId])
+  @@index([version])
+  @@map("candidate_embeddings")
+}
+
+
+// ============================================
+// JOB EMBEDDINGS (Enhanced for Multi-Vector)
+// ============================================
+
+model JobEmbedding {
+  id          Int      @id @default(autoincrement())
+  jobId       Int      @map("job_id")
+  type        String   // jd_summary, required_skills, responsibilities, culture, benefits, full
+  vector      Unsupported("vector")?
+  dimension   Int
+  modelName   String   @map("model_name")
+  version     Int      @default(1)
+  
+  // ✅ Metadata
+  tokenCount  Int?     @map("token_count")  // NEW: For chunking strategies
+  language    String?  @default("en")  // NEW: Multilingual support
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, type, version])  // NEW: Prevent duplicate embeddings
+  @@index([jobId])
+  @@index([type])
+  @@index([version])  // NEW: Query latest version
+  @@map("job_embeddings")
+}
+
+
 
 model WorkExperience {
   id           Int       @id @default(autoincrement())
@@ -407,6 +600,228 @@ model Education {
   @@index([resumeId])
   @@map("educations")
 }
+
+// ============================================
+// SkillTaxonomy with Job Relations
+// ============================================
+
+model SkillTaxonomy {
+  id                   Int      @id @default(autoincrement())
+  
+  // ✅ Core identifiers
+  skillName            String   @map("skill_name")
+  normalizedName       String   @unique @map("normalized_name")
+  skillCode            String?  @unique @map("skill_code")  // NEW: Internal unique code (e.g., SKL-00123)
+  
+  // ✅ Classification
+  skillType            SkillType @default(TECHNICAL) @map("skill_type")
+  category             String?   // Frontend, Backend, Leadership, etc.
+  subcategory          String?   // NEW: Finer granularity (e.g., Frontend > React)
+  
+  // ✅ Multi-level hierarchy (adjacency list + materialized path)
+  parentId             Int?      @map("parent_id")
+  parent               SkillTaxonomy? @relation("SkillHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children             SkillTaxonomy[] @relation("SkillHierarchy")
+  
+  skillLevel           Int       @map("skill_level")  // 0 = root, 1 = top-level, 2+ = sub-skills
+  hierarchyPath        String?   @map("hierarchy_path")  // NEW: Materialized path (e.g., "/1/5/23/")
+  
+  // ✅ International ontology mappings
+  escoUri              String?   @unique @map("esco_uri")  // NEW: e.g., http://data.europa.eu/esco/skill/abc123
+  onetCode             String?   @map("onet_code")  // NEW: e.g., 2.B.4.a (can be non-unique)
+  iscoCode             String?   @map("isco_code")  // NEW: International Standard Classification of Occupations
+  
+  // ✅ Role-based weighting (context-aware scoring)
+  baseWeight           Float     @default(0.5) @map("base_weight")
+  technicalRoleWeight  Float     @default(0.8) @map("technical_role_weight")
+  leadershipRoleWeight Float     @default(0.6) @map("leadership_role_weight")
+  managerialRoleWeight Float     @default(0.7) @map("managerial_role_weight")  // NEW
+  
+  // ✅ Demand & trend metrics
+  demandScore          Float?    @default(0.5) @map("demand_score")  // NEW: 0-1 market demand
+  trendingScore        Float?    @default(0.0) @map("trending_score")  // NEW: Growth velocity
+  lastTrendUpdate      DateTime? @map("last_trend_update")  // NEW
+  
+  // ✅ Versioned embeddings (for semantic search)
+  embeddingVersion     Int       @default(1) @map("embedding_version")  // NEW: Track embedding model version
+  embedding            Unsupported("vector")?
+  embeddingModel       String?   @map("embedding_model")
+  embeddingDimension   Int?      @default(768) @map("embedding_dimension")
+  embeddingUpdatedAt   DateTime? @map("embedding_updated_at")
+  needsEmbeddingUpdate Boolean   @default(false) @map("needs_embedding_update")
+  
+  // ✅ Lifecycle & metadata
+  status               SkillStatus @default(ACTIVE) @map("status")  // NEW: ACTIVE, DEPRECATED, MERGED
+  mergedIntoId         Int?      @map("merged_into_id")  // NEW: If skill was merged
+  mergedInto           SkillTaxonomy? @relation("SkillMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  mergedSkills         SkillTaxonomy[] @relation("SkillMerge")
+  
+  industryRelevance    Json?     @map("industry_relevance")  // {"tech": 0.9, "healthcare": 0.3}
+  roleRelevance        Json?     @map("role_relevance")      // {"engineer": 0.95, "designer": 0.4}
+  
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  profileSkills        ProfileSkill[]
+  jobRequiredSkills    JobRequiredSkill[]
+  
+  synonyms             SkillSynonym[]  // NEW: Normalized relation
+  relatedSkills        SkillRelation[] @relation("SourceSkill")  // NEW: Graph edges
+  relatedBySkills      SkillRelation[] @relation("TargetSkill")  // NEW
+  clusterMemberships   SkillClusterMember[]  // NEW: Many-to-many with clusters
+  
+  @@index([normalizedName])
+  @@index([skillLevel])
+  @@index([parentId])
+  @@index([skillType])
+  @@index([category])
+  @@index([status])
+  @@index([hierarchyPath])  // NEW: Fast hierarchy queries
+  @@index([escoUri])  // NEW
+  @@index([onetCode])  // NEW
+  @@index([demandScore])  // NEW: For trending skills queries
+  @@map("skill_taxonomy")
+}
+
+enum SkillStatus {
+  ACTIVE
+  DEPRECATED
+  MERGED
+  PENDING_REVIEW
+}
+
+
+enum SkillType {
+  TECHNICAL
+  SOFT
+  DOMAIN
+  TOOL
+  CERTIFICATION
+  LANGUAGE
+}
+
+
+model SkillSynonym {
+  id               Int      @id @default(autoincrement())
+  skillTaxonomyId  Int      @map("skill_taxonomy_id")
+  synonym          String
+  normalizedForm   String   @map("normalized_form")  // Lowercased, trimmed
+  locale           String?  @default("en")  // NEW: Language support (en, es, fr, etc.)
+  confidence       Float    @default(1.0)  // NEW: AI-extracted synonyms may have < 1.0
+  source           String   @default("MANUAL")  // MANUAL, AI_EXTRACTED, ESCO, ONET
+  
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  skillTaxonomy    SkillTaxonomy @relation(fields: [skillTaxonomyId], references: [id], onDelete: Cascade)
+  
+  @@unique([skillTaxonomyId, normalizedForm])
+  @@index([normalizedForm])  // Critical for Boolean search
+  @@index([skillTaxonomyId])
+  @@map("skill_synonyms")
+}
+
+model SkillRelation {
+  id              Int      @id @default(autoincrement())
+  sourceSkillId   Int      @map("source_skill_id")
+  targetSkillId   Int      @map("target_skill_id")
+  relationType    SkillRelationType @map("relation_type")
+  strength        Float    @default(0.5)  // 0-1 relationship strength
+  bidirectional   Boolean  @default(false)  // Is the relation symmetric?
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  sourceSkill     SkillTaxonomy @relation("SourceSkill", fields: [sourceSkillId], references: [id], onDelete: Cascade)
+  targetSkill     SkillTaxonomy @relation("TargetSkill", fields: [targetSkillId], references: [id], onDelete: Cascade)
+  
+  @@unique([sourceSkillId, targetSkillId, relationType])
+  @@index([sourceSkillId])
+  @@index([targetSkillId])
+  @@index([relationType])
+  @@index([strength])  // For "show strongest related skills"
+  @@map("skill_relations")
+}
+
+enum SkillRelationType {
+  REQUIRES           // A requires B (e.g., React requires JavaScript)
+  ENABLES            // A enables B (e.g., Python enables Django)
+  SIMILAR_TO         // Synonymous/interchangeable
+  SPECIALIZATION_OF  // A is a specialization of B
+  COMMONLY_WITH      // Co-occurrence (data-driven)
+  PROGRESSION        // Career progression path
+}
+
+model SkillCluster {
+  id            Int      @id @default(autoincrement())
+  clusterName   String   @unique @map("cluster_name")
+  description   String?
+  clusterType   String   @default("THEMATIC") @map("cluster_type")  // THEMATIC, ROLE_BASED, INDUSTRY_BASED
+  
+  // ✅ Cluster-level embedding (for semantic matching)
+  embedding     Unsupported("vector")?
+  embeddingModel String? @map("embedding_model")
+  embeddingVersion Int   @default(1) @map("embedding_version")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")  
+  
+  members       SkillClusterMember[]
+  
+  @@index([clusterType])
+  @@map("skill_clusters")
+}
+
+model SkillClusterMember {
+  id              Int      @id @default(autoincrement())
+  clusterId       Int      @map("cluster_id")
+  skillTaxonomyId Int      @map("skill_taxonomy_id")
+  weight          Float    @default(1.0)  // Importance within cluster
+  isCoreSkill     Boolean  @default(false) @map("is_core_skill")  // Is this a defining skill?
+  
+  cluster         SkillCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  skill           SkillTaxonomy @relation(fields: [skillTaxonomyId], references: [id], onDelete: Cascade)
+  
+  @@unique([clusterId, skillTaxonomyId])
+  @@index([clusterId])
+  @@index([skillTaxonomyId])
+  @@map("skill_cluster_members")
+}
+
+model SkillOntologyVersion {
+  id              Int      @id @default(autoincrement())
+  version         String   @unique  // e.g., "2025.11.1"
+  escoVersion     String?  @map("esco_version")  // e.g., "v1.2.0"
+  onetVersion     String?  @map("onet_version")  // e.g., "28.0"
+  description     String?
+  skillCount      Int      @map("skill_count")
+  releasedAt      DateTime @map("released_at")
+  isActive        Boolean  @default(false) @map("is_active")  // Only one active version
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  @@index([isActive])
+  @@map("skill_ontology_versions")
+}
+
+
+model NonTaxonomySkill {
+  id             Int      @id @default(autoincrement())
+  skillName      String   @map("skill_name")
+  normalizedName String   @map("normalized_name")
+  source         String   // RESUME, PROFILE, JOB_POSTING
+  sourceId       Int?     @map("source_id") // Reference to the source entity
+  frequency      Int      @default(1) // How many times encountered
+  reviewed       Boolean  @default(false) // Has been reviewed for taxonomy inclusion
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([normalizedName, source, sourceId])
+  @@index([normalizedName])
+  @@index([reviewed])
+  @@map("non_taxonomy_skills")
+}
+
 
 enum Role {
   CANDIDATE
@@ -477,4 +892,56 @@ enum ProficiencyLevel {
   INTERMEDIATE
   ADVANCED
   EXPERT
+}
+
+
+
+// ============================================
+// JOB
+// ============================================
+
+enum JobStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+  FILLED
+  EXPIRED
+  ARCHIVED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  FREELANCE
+  INTERNSHIP
+  TEMPORARY
+}
+
+enum RoleType {
+  INDIVIDUAL_CONTRIBUTOR
+  TEAM_LEAD
+  MANAGER
+  SENIOR_MANAGER
+  DIRECTOR
+  VP
+  C_LEVEL
+}
+
+enum SeniorityLevel {
+  INTERN
+  JUNIOR
+  MID_LEVEL
+  SENIOR
+  STAFF
+  PRINCIPAL
+  DISTINGUISHED
+}
+
+enum SkillImportance {
+  CRITICAL      // Must have, deal-breaker
+  REQUIRED      // Strong requirement
+  PREFERRED     // Nice to have
+  BONUS         // Extra credit
 }
