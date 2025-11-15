@@ -2338,6 +2338,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/murmurhash3js@npm:^3":
+  version: 3.0.7
+  resolution: "@types/murmurhash3js@npm:3.0.7"
+  checksum: 10c0/f2a48688998b9b7f2b07a15d1bf93947c26ee04b604ece6d61d12de0a9cf746dac5cf947839e919f7d96a5cc016470eaf1a9583f53c868c374d264eeb63b55a4
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:*":
   version: 24.3.1
   resolution: "@types/node@npm:24.3.1"
@@ -6795,6 +6802,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"murmurhash3js@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "murmurhash3js@npm:3.0.1"
+  checksum: 10c0/ec4f37dc65f3789f0dbfe6cceaa6ef825a343241c70652f9a2098890638733195789d36e610da3843380b82c26bb53603b6d057e5bc608a189b4198ea5f9b572
+  languageName: node
+  linkType: hard
+
 "mute-stream@npm:^2.0.0":
   version: 2.0.0
   resolution: "mute-stream@npm:2.0.0"
@@ -8458,6 +8472,7 @@ __metadata:
     "@types/helmet": "npm:^4.0.0"
     "@types/jest": "npm:^30.0.0"
     "@types/multer": "npm:^2.0.0"
+    "@types/murmurhash3js": "npm:^3"
     "@types/node": "npm:^22.10.7"
     "@types/passport": "npm:^0"
     "@types/passport-jwt": "npm:^4.0.1"
@@ -8477,6 +8492,7 @@ __metadata:
     helmet: "npm:^7.1.0"
     ioredis: "npm:^5.7.0"
     jest: "npm:^30.0.0"
+    murmurhash3js: "npm:^3.0.1"
     nest-winston: "npm:^1.10.2"
     nestjs-i18n: "npm:^10.5.1"
     passport: "npm:^0.7.0"
